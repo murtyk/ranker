@@ -1,0 +1,43 @@
+version: '3.3'
+services:
+  redis:
+    image: redis:7.0
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    # This command override applies a config to disable redis stop-writes-on-bgsave-error https://stackoverflow.com/c/vydia/a/1085/3.
+    # The approach for running two commands in parallel was inspired by: https://stackoverflow.com/a/5553774/2696867.
+    # We sleep for 10 seconds in order to give redis-server enough time to start up before running the `config set` command.
+    # Another approach would be to specify a custom redis.conf, like here: https://hub.docker.com/_/redis, under "Additionally, If you want to use your own redis.conf"
+    command: >
+      bash -c "(sleep 10 && redis-cli config set stop-writes-on-bgsave-error no) & redis-server && fg"
+  db:
+    image: postgres:14.5-alpine
+    ports:
+      - "5442:5432"
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+    volumes:
+      - ./db_data:/var/lib/postgresql/data:delegated # For perf reasons, use delegated volume guarantee. https://medium.com/homullus/beating-some-performance-into-docker-for-mac-f5d1e732032c
+
+  web:
+    tty: true
+    stdin_open: true
+    build: .
+    # command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 6001 -b '0.0.0.0'"
+    # command: rails s -b 0.0.0.0 -p 6001
+    # command: /bin/bash
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - DATABASE_HOST=db
+      - DATABASE_NAME=ranker
+      - TEST_DATABASE_NAME=ranker_test
+    volumes:
+      - .:/ranker
+    ports:
+      - "6001:6001"
+    depends_on:
+      - db
+      - redis
